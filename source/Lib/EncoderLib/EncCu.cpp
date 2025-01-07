@@ -64,6 +64,8 @@ POSSIBILITY OF SUCH DAMAGE.
 #include <cmath>
 #include <algorithm>
 
+#include "../CommonLib/storchmain.h"
+
 //! \ingroup EncoderLib
 //! \{
 
@@ -688,6 +690,14 @@ void EncCu::xCompressCU( CodingStructure*& tempCS, CodingStructure*& bestCS, Par
 
   m_cuChromaQpOffsetIdxPlus1 = 0;
 
+  if (storch::sTRACE_xCompressCU && tempCS->picture->poc>0 && storch::isAffineSize(tempCS->area.lwidth(), tempCS->area.lheight()) ){
+    
+    printf("xCompressCU,POC=%d,X=%d,Y=%d,W=%d,H=%d\n", tempCS->picture->poc, tempCS->area.lx(), tempCS->area.ly(), tempCS->area.lwidth(), tempCS->area.lheight());
+    
+  }
+  
+  
+  
   if( slice.chromaQpAdjEnabled && partitioner.currQgChromaEnable() )
   {
     // TODO M0133 : double check encoder decisions with respect to chroma QG detection and actual encode

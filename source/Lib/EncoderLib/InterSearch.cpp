@@ -60,6 +60,8 @@ POSSIBILITY OF SUCH DAMAGE.
 
 #include <math.h>
 
+#include "../CommonLib/storchmain.h"
+
  //! \ingroup EncoderLib
  //! \{
 
@@ -4568,6 +4570,14 @@ void InterSearch::xPredAffineInterSearch( CodingUnit& cu,
                                           bool            enforceBcwPred,
                                           uint32_t        BcwIdxBits )
 {
+  
+  if(storch::sTRACE_xCompressCU && storch::sTRACE_xPredAffineInterSearch){
+    printf("xPredAffineInterSearch\n");
+  }
+    
+  
+  EAffineModel AFFINE_PARAMS = cu.affineType? AFFINEMODEL_6PARAM : AFFINEMODEL_4PARAM;
+  
   const Slice &slice = *cu.slice;
 
   affineCost = MAX_DISTORTION;
@@ -4631,6 +4641,9 @@ void InterSearch::xPredAffineInterSearch( CodingUnit& cu,
     cu.BcwIdx = BcwIdx;
   }
 
+  storch::startxPredAffineInterInterSearch_size( );
+  storch::startxPredAffineInterInterSearchUnipred_size( );
+  
   // Uni-directional prediction
   for (int iRefList = 0; iRefList < iNumPredDir; iRefList++)
   {
@@ -4886,7 +4899,9 @@ void InterSearch::xPredAffineInterSearch( CodingUnit& cu,
       }
     } // End refIdx loop
   } // end Uni-prediction
-
+  
+  storch::finishxPredAffineInterInterSearchUnipred_size( );
+  
   if (cu.affineType == AFFINEMODEL_4PARAM)
   {
     ::memcpy(mvAffine4Para, tmp.affMVs, sizeof(tmp.affMVs));
@@ -5094,6 +5109,8 @@ void InterSearch::xPredAffineInterSearch( CodingUnit& cu,
     m_isBi = false;
   } // if (B_SLICE)
 
+  storch::finishxPredAffineInterInterSearch_size( );
+  
   cu.mv [REF_PIC_LIST_0][0] = Mv();
   cu.mv [REF_PIC_LIST_1][0] = Mv();
   cu.mvd[REF_PIC_LIST_0][0] = cMvZero;
@@ -5357,7 +5374,7 @@ void InterSearch::xAffineMotionEstimation(CodingUnit& cu,
   int&            mvpIdx,
   const AffineAMVPInfo& aamvpi,
   bool            bBi)
-{
+{  
   if( cu.cs->sps->BCW && cu.BcwIdx != BCW_DEFAULT && !bBi && xReadBufferedAffineUniMv( cu, refPicList, iRefIdxPred, acMvPred, acMv, ruiBits, ruiCost, mvpIdx, aamvpi ) )
   {
     return;

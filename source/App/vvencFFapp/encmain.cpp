@@ -55,6 +55,8 @@ POSSIBILITY OF SUCH DAMAGE.
 
 #include "vvenc/vvenc.h"
 
+#include "CommonLib/storchmain.h"
+
 //! \ingroup EncoderApp
 //! \{
 
@@ -94,6 +96,10 @@ int main(int argc, char* argv[])
     return 0;
   }
 
+  #if STORCHMAIN_H
+    storch();
+  #endif   
+  
   // starting time
   auto startTime  = std::chrono::steady_clock::now();
   std::time_t startTime2 = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
@@ -114,6 +120,8 @@ int main(int argc, char* argv[])
   msgApp( VVENC_INFO, "\nvvencFFapp [info]: finished @ %s", std::ctime(&endTime2) );
   msgApp( VVENC_INFO, "vvencFFapp [info]: Total Time: %12.3f sec. [user] %12.3f sec. [elapsed]\n", (endClock - startClock) * 1.0 / CLOCKS_PER_SEC, encTime / 1000.0);
 
+  storch::printSummary();
+  
   return ret;
 }
 

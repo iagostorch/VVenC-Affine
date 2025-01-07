@@ -64,6 +64,8 @@ POSSIBILITY OF SUCH DAMAGE.
 #include "apputils/VVEncAppCfg.h"
 #include "apputils/Stats.h"
 
+#include "CommonLib/storchmain.h"
+
 vvencMsgLevel g_verbosity = VVENC_VERBOSE;
 
 void msgFnc( void*, int level, const char* fmt, va_list args )
@@ -280,6 +282,10 @@ int main( int argc, char* argv[] )
   vvenc_YUVBuffer_default( &cYUVInputBuffer );
   vvenc_YUVBuffer_alloc_buffer( &cYUVInputBuffer, vvenccfg.m_internChromaFormat, vvenccfg.m_SourceWidth, vvenccfg.m_SourceHeight );
 
+  #if STORCHMAIN_H
+    storch();
+  #endif
+      
   // --- start timer
   std::chrono::steady_clock::time_point cTPStartRun = std::chrono::steady_clock::now();
   if( vvenccfg.m_verbosity > VVENC_WARNING )
@@ -476,6 +482,8 @@ int main( int argc, char* argv[] )
     double dFps = (double)uiFrames / dTimeSec;
     msgApp( nullptr, VVENC_INFO, "vvencapp [info]: Total Time: %.3f sec. Fps(avg): %.3f encoded Frames %d\n", dTimeSec, dFps, uiFrames );
   }
+  
+  storch::printSummary();
 
   return 0;
 }

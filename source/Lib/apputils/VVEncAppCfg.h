@@ -63,6 +63,8 @@ POSSIBILITY OF SUCH DAMAGE.
 #include "ParseArg.h"
 #include "YuvFileIO.h"
 
+#include "../CommonLib/storchmain.h"
+
 #define MACRO_TO_STRING_HELPER(val) #val
 #define MACRO_TO_STRING(val) MACRO_TO_STRING_HELPER(val)
 
@@ -597,6 +599,12 @@ int parse( int argc, char* argv[], vvenc_config* c, std::ostream& rcOstr )
   ("Verbosity,v",                                     toMsgLevel,                                          "verbosity level (0: silent, 1: error, 2: warning, 3: info, 4: notice, 5: verbose, 6: debug)")
   ("stats",                                           m_printStats,                                        "enable or disable printing of statistics (fps, bitrate, estimation of encoding time)")
   ("version",                                         m_showVersion,                                       "show version ")
+  ;
+  
+  opts.setSubSection("Storch Options");
+  opts.addOptions()
+  ("sTRACE_xCompressCU",                              storch::sTRACE_xCompressCU,                         "Trace all calls to AffineME-compliant xCompressCU, including the block dimension and position") 
+  ("sTRACE_xPredAffineInterSearch",                   storch::sTRACE_xPredAffineInterSearch,              "Trace all calls to xPredAffineInterSearch, which includes Affine ME with 2 CPs and 3 CPs, unipred and bipred") 
   ;
 
   opts.setSubSection("Input Options");
