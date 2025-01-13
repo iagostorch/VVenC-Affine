@@ -42,6 +42,7 @@ public:
     
     // Custom encoding parameters
     static int sTRACE_xCompressCU, sTRACE_xPredAffineInterSearch;
+    static int sGPU_gpuMe2Cps, sGPU_gpuMe3Cps, sGPU_predict3CpsFrom2Cps;
     
     static CuSize getSizeEnum(vvenc::CodingUnit cu);
     

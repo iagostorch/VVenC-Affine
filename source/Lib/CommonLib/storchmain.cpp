@@ -16,6 +16,7 @@
 
 // Custom encoding parameters
 int storch::sTRACE_xCompressCU, storch::sTRACE_xPredAffineInterSearch;
+int storch::sGPU_gpuMe2Cps, storch::sGPU_gpuMe3Cps, storch::sGPU_predict3CpsFrom2Cps;
 
 int storch::priv;
 struct timeval storch::xPredAffineInterSearchUnipred_tv1, storch::xPredAffineInterSearchUnipred_tv2, storch::xPredAffineInterSearch_tv1, storch::xPredAffineInterSearch_tv2;

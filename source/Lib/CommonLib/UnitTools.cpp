@@ -2126,6 +2126,40 @@ void CU::fillAffineMvpCand(CodingUnit& cu, const RefPicList refPicList, const in
   }
 }
 
+// Fills the candidate list with 0x0 CPMVs. Used to force the Affine ME to start at the collocated position
+void CU::fillAffineMvpCand_onlyZero(CodingUnit& cu, const RefPicList refPicList, const int refIdx, AffineAMVPInfo &affiAMVPInfo)
+{
+  affiAMVPInfo.numCand = 0;
+
+  if (refIdx < 0)
+  {
+    return;
+  }
+
+  if (affiAMVPInfo.numCand < 2)
+  {
+    if (affiAMVPInfo.numCand < 2)
+    {
+      // add zero MV
+      for (int i = affiAMVPInfo.numCand; i < AMVP_MAX_NUM_CANDS; i++)
+      {
+        affiAMVPInfo.mvCandLT[affiAMVPInfo.numCand].setZero();
+        affiAMVPInfo.mvCandRT[affiAMVPInfo.numCand].setZero();
+        affiAMVPInfo.mvCandLB[affiAMVPInfo.numCand].setZero();
+        affiAMVPInfo.numCand++;
+      }
+    }
+  }
+
+  for (int i = 0; i < affiAMVPInfo.numCand; i++)
+  {
+    affiAMVPInfo.mvCandLT[i].roundAffinePrecInternal2Amvr(cu.imv);
+    affiAMVPInfo.mvCandRT[i].roundAffinePrecInternal2Amvr(cu.imv);
+    affiAMVPInfo.mvCandLB[i].roundAffinePrecInternal2Amvr(cu.imv);
+  }
+}
+
+
 bool CU::addMVPCandUnscaled( const CodingUnit& cu, const RefPicList refPicList, const int iRefIdx, const Position& pos, const MvpDir dir, AMVPInfo &info )
 {
         CodingStructure &cs    = *cu.cs;

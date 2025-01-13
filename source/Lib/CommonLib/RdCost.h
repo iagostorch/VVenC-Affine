@@ -240,6 +240,7 @@ private:
   static Distortion xGetHAD2SADs      ( const DistParam& pcDtParam );
   template<bool fastHad>
   static Distortion xGetHADs          ( const DistParam& pcDtParam );
+  static Distortion xGetHADs_GPU      ( const DistParam& pcDtParam ); // Distortion function that forces the usage of multiple 4x4 HAD distortion metrics
 
 #ifdef TARGET_SIMD_X86
   template<X86_VEXT vext>

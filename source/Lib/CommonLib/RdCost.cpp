@@ -279,7 +279,13 @@ Distortion RdCost::getDistPart( const CPelBuf& org, const CPelBuf& cur, int bitD
   {
     CHECKD( eDFunc != DF_SSE_WTD, "mismatch func and parameter")
     dp.orgLuma  = orgLuma;
-    dist = RdCost::xGetSSE_WTD( dp );
+    if(eDFunc == GPU_ME_DISTORTION){
+      dist = RdCost::xGetHADs_GPU(dp);
+    }
+    else{
+      dist = RdCost::xGetSSE_WTD( dp );
+    }
+    
   }
   else
   {
@@ -290,7 +296,21 @@ Distortion RdCost::getDistPart( const CPelBuf& org, const CPelBuf& cur, int bitD
     else
     {
       const int base = (bitDepth > 10) ? 1 : 0;
-      dist = m_afpDistortFunc[base][eDFunc + Log2(org.width)](dp);
+      
+      if(eDFunc == GPU_ME_DISTORTION){
+        if( base==0 ){
+          dist = m_afpDistortFunc[base][DF_HAD4](dp);
+        }
+        else{
+          printf("ERROR: GPU-based Affine ME not supported for bitDepth>10\n");
+          exit(-1);
+        }
+      }
+      else{
+        dist = m_afpDistortFunc[base][eDFunc + Log2(org.width)](dp);
+      }
+      
+      
     }
   }
   if (isChroma(compId))
@@ -1949,6 +1969,46 @@ Distortion RdCost::xGetHADs( const DistParam &rcDtParam )
 
   return (uiSum >> DISTORTION_PRECISION_ADJUSTMENT(rcDtParam.bitDepth));
 }
+
+// Distortion function that forces the usage of multiple 4x4 HAD distortion metrics
+Distortion RdCost::xGetHADs_GPU( const DistParam &rcDtParam )
+{
+  if( rcDtParam.applyWeight )
+  {
+    THROW(" no support");
+  }
+  const Pel* piOrg = rcDtParam.org.buf;
+  const Pel* piCur = rcDtParam.cur.buf;
+  const int  iRows = rcDtParam.org.height;
+  const int  iCols = rcDtParam.org.width;
+  const int  iStrideCur = rcDtParam.cur.stride;
+  const int  iStrideOrg = rcDtParam.org.stride;
+
+  int  x = 0, y = 0;
+
+  Distortion uiSum = 0;
+
+  
+  if( ( iRows % 4 == 0 ) && ( iCols % 4 == 0 ) )
+  {
+    for( y = 0; y < iRows; y += 4 )
+    {
+      for( x = 0; x < iCols; x += 4 )
+      {
+        uiSum += xCalcHADs4x4( &piOrg[x], &piCur[x], iStrideOrg, iStrideCur );
+      }
+      piOrg += 4*iStrideOrg;
+      piCur += 4*iStrideCur;
+    }
+  }
+  else
+  {
+    THROW( "Invalid size" );
+  }
+
+  return (uiSum >> DISTORTION_PRECISION_ADJUSTMENT(rcDtParam.bitDepth));
+}
+
 
 
 void RdCost::saveUnadjustedLambda()

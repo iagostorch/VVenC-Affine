@@ -373,6 +373,7 @@ enum DFunc : uint8_t
   DF_HAD128_fast     = DF_HAD_fast+7,      ///< 16NxM fast HAD
 
   DF_TOTAL_FUNCTIONS = 34,
+  GPU_ME_DISTORTION, // Used to apply HAD4 in affine prediction when GPU_ME is enabled
 
   DF_SSE_WTD         = 0xf2u          // out of func scope
 };

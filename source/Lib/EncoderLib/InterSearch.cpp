@@ -4641,6 +4641,17 @@ void InterSearch::xPredAffineInterSearch( CodingUnit& cu,
     cu.BcwIdx = BcwIdx;
   }
 
+  
+  int gpuAffineAmvp;
+  
+  if(   ( storch::sGPU_gpuMe2Cps && cu.affineType==AFFINEMODEL_4PARAM )
+     || ( storch::sGPU_gpuMe3Cps && cu.affineType==AFFINEMODEL_6PARAM ) ){
+    gpuAffineAmvp = 1;
+  }
+  else{
+    gpuAffineAmvp = 0;
+  }
+
   storch::startxPredAffineInterInterSearch_size( );
   storch::startxPredAffineInterInterSearchUnipred_size( );
   
@@ -4663,7 +4674,15 @@ void InterSearch::xPredAffineInterSearch( CodingUnit& cu,
       }
 
       // Do Affine AMVP
-      bool foundPred = xEstimateAffineAMVP(cu, affiAMVPInfoTemp[refPicList], origBuf, refPicList, iRefIdxTemp, cMvPred[iRefList][iRefIdxTemp], biPDistTemp);
+      bool foundPred;
+      
+      if(gpuAffineAmvp){
+        foundPred = xEstimateAffineAMVP_gpuBeforeME(cu, affiAMVPInfoTemp[refPicList], origBuf, refPicList, iRefIdxTemp, cMvPred[iRefList][iRefIdxTemp], biPDistTemp);
+      }
+      else{
+        foundPred = xEstimateAffineAMVP(cu, affiAMVPInfoTemp[refPicList], origBuf, refPicList, iRefIdxTemp, cMvPred[iRefList][iRefIdxTemp], biPDistTemp);
+      }
+        
       if( !foundPred )
         return;
 
@@ -4687,8 +4706,10 @@ void InterSearch::xPredAffineInterSearch( CodingUnit& cu,
       }
       PelUnitBuf predBuf = m_tmpStorageLCU.getCompactBuf(cu);
 
-      Distortion uiCandCost = xGetAffineTemplateCost(cu, origBuf, predBuf, mvHevc, aaiMvpIdx[iRefList][iRefIdxTemp],
-        AMVP_MAX_NUM_CANDS, refPicList, iRefIdxTemp);
+      // Compute the cost for the predicted MVs. xGetAffineTemplateCost makes a call to xPredAffineBlk, which performs the prediction for a block
+      Distortion uiCandCost = biPDistTemp+1;  // This assignment guarantees that if we do not check the HEVC MV (next if), then the HEVC MV will have a cost larger than AMVP and will not be selected. This is used to enforce zero MV in some cases
+      if(!gpuAffineAmvp)
+          xGetAffineTemplateCost(cu, origBuf, predBuf, mvHevc, aaiMvpIdx[iRefList][iRefIdxTemp], AMVP_MAX_NUM_CANDS, refPicList, iRefIdxTemp);
 
       if (affineAmvrEnabled)
       {
@@ -4719,7 +4740,8 @@ void InterSearch::xPredAffineInterSearch( CodingUnit& cu,
         }
       }
 
-      if( cu.affineType == AFFINEMODEL_4PARAM && m_AffineProfList->m_affMVListSize && (!cu.cs->sps->BCW || BcwIdx == BCW_DEFAULT ) )
+      if( !gpuAffineAmvp // Only tests different starting points when we are not enforcing zeroMV
+              && cu.affineType == AFFINEMODEL_4PARAM && m_AffineProfList->m_affMVListSize && (!cu.cs->sps->BCW || BcwIdx == BCW_DEFAULT ) )
       {
         int shift = MAX_CU_DEPTH;
         for (int i = 0; i < m_AffineProfList->m_affMVListSize; i++)
@@ -4779,7 +4801,10 @@ void InterSearch::xPredAffineInterSearch( CodingUnit& cu,
           }
         }
       }
-      if (cu.affineType == AFFINEMODEL_6PARAM)
+      
+      // Generate a starting point for 3 CPs based on 2 CPs result
+      if (      cu.affineType == AFFINEMODEL_6PARAM
+          && (storch::sGPU_gpuMe3Cps==0 || (storch::sGPU_gpuMe3Cps && storch::sGPU_predict3CpsFrom2Cps ) ) ) // When GpuME for 3 CPs is enabled, the Predicted CPMVs can be forced to be zero (PREDICT_3CPs_FROM_2CPs==0) or can be generated out of the best results for 2 CPs (PREDICT_3CPs_FROM_2CPs==1)
       {
         Mv mvFour[3];
         mvFour[0] = mvAffine4Para[iRefList][iRefIdxTemp][0];
@@ -4804,7 +4829,8 @@ void InterSearch::xPredAffineInterSearch( CodingUnit& cu,
         {
           uiCandCostInherit += m_pcRdCost->getCost(xCalcAffineMVBits(cu, mvFour, cMvPred[iRefList][iRefIdxTemp]));
         }
-        if (uiCandCostInherit < uiCandCost)
+        if (   (uiCandCostInherit < uiCandCost)  // Standard decision of VTM
+           ||  ( cu.affineType==AFFINEMODEL_6PARAM && storch::sGPU_gpuMe3Cps && storch::sGPU_predict3CpsFrom2Cps ) )  // Forced decision when we have 3 CPs and we are using GPU_ME_3CPs while inheriting best 2 CPs as predictors for 3 CPs
         {
           uiCandCost = uiCandCostInherit;
           for (int i = 0; i < 3; i++)
@@ -4817,6 +4843,12 @@ void InterSearch::xPredAffineInterSearch( CodingUnit& cu,
       if (uiCandCost < biPDistTemp)
       {
         ::memcpy(tmp.affMVs[iRefList][iRefIdxTemp], mvHevc, sizeof(Mv) * 3);
+      }
+      else if(cu.affineType==AFFINEMODEL_6PARAM && storch::sGPU_gpuMe3Cps && storch::sGPU_predict3CpsFrom2Cps)
+      {
+        // Forces the inherited CPMVs to be used as initial CPMVs in Gradient-ME
+        // These inherited CPMVs may be worse than the CPMVs obtained by AMVP but we must conduct always the same decision based on PREDICT_3CPs_FROM_2CPs
+        ::memcpy(tmp.affMVs[iRefList][iRefIdxTemp], mvHevc, sizeof(Mv)*3 );
       }
       else
       {
@@ -4838,11 +4870,17 @@ void InterSearch::xPredAffineInterSearch( CodingUnit& cu,
       {
         if (slice.list1IdxToList0Idx[iRefIdxTemp] >= 0 && (cu.affineType != AFFINEMODEL_6PARAM || slice.list1IdxToList0Idx[iRefIdxTemp] == refIdx4Para[0]))
         {
+          // Same reference in different list. Reuse distortion, update bits
           int iList1ToList0Idx = slice.list1IdxToList0Idx[iRefIdxTemp];
           ::memcpy(tmp.affMVs[1][iRefIdxTemp], tmp.affMVs[0][iList1ToList0Idx], sizeof(Mv) * 3);
           uiCostTemp = uiCostTempL0[iList1ToList0Idx];
 
           uiCostTemp -= m_pcRdCost->getCost(uiBitsTempL0[iList1ToList0Idx]);
+          
+          if(gpuAffineAmvp){
+            xEstimateAffineAMVP_afterME(cu, affiAMVPInfoTemp[refPicList], origBuf, refPicList, iRefIdxTemp, cMvPred[iRefList][iRefIdxTemp], biPDistTemp);
+          }
+          
           uiBitsTemp += xCalcAffineMVBits(cu, tmp.affMVs[iRefList][iRefIdxTemp], cMvPred[iRefList][iRefIdxTemp]);
           /*calculate the correct cost*/
           uiCostTemp += m_pcRdCost->getCost(uiBitsTemp);
@@ -4850,15 +4888,43 @@ void InterSearch::xPredAffineInterSearch( CodingUnit& cu,
         }
         else
         {
+          int uiBitsTemp_preAffineME = uiBitsTemp;
+          
           xAffineMotionEstimation(cu, origBuf, refPicList, cMvPred[iRefList][iRefIdxTemp], iRefIdxTemp, tmp.affMVs[iRefList][iRefIdxTemp], 
                                   uiBitsTemp, uiCostTemp, aaiMvpIdx[iRefList][iRefIdxTemp], affiAMVPInfoTemp[refPicList]);
+          if(gpuAffineAmvp){
+            xEstimateAffineAMVP_afterME(cu, affiAMVPInfoTemp[refPicList], origBuf, refPicList, iRefIdxTemp, cMvPred[iRefList][iRefIdxTemp], biPDistTemp);
+            // Remove bits from placeholder AMVP 0x0
+            uiCostTemp -= m_pcRdCost->getCost( uiBitsTemp );
+            // Get uiBitsTemp to the value it had before the ME
+            uiBitsTemp = uiBitsTemp_preAffineME;
+            // Update uiBitsTemp with the bitrate of the real AMVP (redo the bitrate computation from xAffineMotionEstimation)
+            uiBitsTemp += xCalcAffineMVBits(cu, tmp.affMVs[iRefList][iRefIdxTemp], cMvPred[iRefList][iRefIdxTemp]);
+            // Add updated bits to the final cost
+            uiCostTemp += m_pcRdCost->getCost( uiBitsTemp );
+          }
         }
       }
       else
       {
+        int uiBitsTemp_preAffineME = uiBitsTemp;
+        
         xAffineMotionEstimation(cu, origBuf, refPicList, cMvPred[iRefList][iRefIdxTemp], iRefIdxTemp, tmp.affMVs[iRefList][iRefIdxTemp], 
                                 uiBitsTemp, uiCostTemp, aaiMvpIdx[iRefList][iRefIdxTemp], affiAMVPInfoTemp[refPicList]);
+        if(gpuAffineAmvp){
+            xEstimateAffineAMVP_afterME(cu, affiAMVPInfoTemp[refPicList], origBuf, refPicList, iRefIdxTemp, cMvPred[iRefList][iRefIdxTemp], biPDistTemp);
+            // Remove bits from placeholder AMVP 0x0
+            uiCostTemp -= m_pcRdCost->getCost( uiBitsTemp );
+            // Get uiBitsTemp to the value it had before the ME
+            uiBitsTemp = uiBitsTemp_preAffineME;
+            // Update uiBitsTemp with the bitrate of the real AMVP (redo the bitrate computation from xAffineMotionEstimation)
+            uiBitsTemp += xCalcAffineMVBits(cu, tmp.affMVs[iRefList][iRefIdxTemp], cMvPred[iRefList][iRefIdxTemp]);
+            // Add updated bits to the final cost
+            uiCostTemp += m_pcRdCost->getCost( uiBitsTemp );
+          }
       }
+
+//      std::cout << "uiCostTemp after xAffineME> " << uiCostTemp << std::endl;
       
       if( slice.sps->BCW && cu.BcwIdx == BCW_DEFAULT && slice.isInterB() )
       {
@@ -4867,6 +4933,8 @@ void InterSearch::xPredAffineInterSearch( CodingUnit& cu,
                                        aaiMvpIdx[iRefList][iRefIdxTemp] );
       }
 
+      // Doc M-0247: When AMVR is using precision 1-pel for affine the MV predictor can be selected AFTER the motion estimation (for signaling MVD)
+      // Update AMVP index after finding best CPMVs
       // Set best AMVP Index
       xCopyAffineAMVPInfo(affiAMVPInfoTemp[refPicList], aacAffineAMVPInfo[iRefList][iRefIdxTemp]);
       if (cu.imv != 2)//|| !m_pcEncCfg->getUseAffineAmvrEncOpt())
@@ -4888,6 +4956,8 @@ void InterSearch::xPredAffineInterSearch( CodingUnit& cu,
         iRefIdx[iRefList] = iRefIdxTemp;
       }
 
+//      std::cout << "best rdcost final L" << iRefList << ": " << uiCost[iRefList] << std::endl;
+      
       if (iRefList == 1 && uiCostTemp < costValidList1 && slice.list1IdxToList0Idx[iRefIdxTemp] < 0)
       {
         costValidList1 = uiCostTemp;
@@ -5231,7 +5301,15 @@ Distortion InterSearch::xGetAffineTemplateCost(CodingUnit& cu, CPelUnitBuf& orig
   xPredAffineBlk(COMP_Y, cu, picRef, mv, predBuf, false, cu.slice->clpRngs[COMP_Y], refPicList);
 
   // calc distortion
-  uiCost = m_pcRdCost->getDistPart(origBuf.Y(), predBuf.Y(), cu.cs->sps->bitDepths[CH_L], COMP_Y, DF_HAD );
+  // In case we're doing GPU-based Affine, use 4x4-based SATD for distortion
+  if(  ( storch::sGPU_gpuMe2Cps && cu.affineType==AFFINEMODEL_4PARAM ) 
+    || ( storch::sGPU_gpuMe3Cps && cu.affineType==AFFINEMODEL_6PARAM )){ 
+      uiCost = m_pcRdCost->getDistPart(origBuf.Y(), predBuf.Y(), cu.cs->sps->bitDepths[CH_L], COMP_Y, GPU_ME_DISTORTION );
+  }
+  else{
+      uiCost = m_pcRdCost->getDistPart(origBuf.Y(), predBuf.Y(), cu.cs->sps->bitDepths[CH_L], COMP_Y, DF_HAD );
+  }
+  
   uiCost += m_pcRdCost->getCost(m_auiMVPIdxCost[iMVPIdx][iMVPNum]);
 
   DTRACE(g_trace_ctx, D_COMMON, " (%d) affineTemplateCost=%d\n", DTRACE_GET_COUNTER(g_trace_ctx, D_COMMON), uiCost);
@@ -5375,6 +5453,20 @@ void InterSearch::xAffineMotionEstimation(CodingUnit& cu,
   const AffineAMVPInfo& aamvpi,
   bool            bBi)
 {  
+
+// Used to skip refinement/simplification stage inside Affine ME and enforce distortion based on HAD4  
+  int skipRefinement;
+  enum vvenc::DFunc distFunc = DF_HAD;
+  
+  if(   ( storch::sGPU_gpuMe2Cps && cu.affineType==AFFINEMODEL_4PARAM )
+     || ( storch::sGPU_gpuMe3Cps && cu.affineType==AFFINEMODEL_6PARAM ) ){
+    skipRefinement = 1;
+    distFunc = GPU_ME_DISTORTION;
+  }
+  else{
+    skipRefinement = 0;
+  }
+  
   if( cu.cs->sps->BCW && cu.BcwIdx != BCW_DEFAULT && !bBi && xReadBufferedAffineUniMv( cu, refPicList, iRefIdxPred, acMvPred, acMv, ruiBits, ruiCost, mvpIdx, aamvpi ) )
   {
     return;
@@ -5453,7 +5545,7 @@ void InterSearch::xAffineMotionEstimation(CodingUnit& cu,
     xPredAffineBlk(COMP_Y, cu, refPic, acMvTemp, predBuf, false, cu.cs->slice->clpRngs[COMP_Y], refPicList);
 
     // get error
-    uiCostBest = m_pcRdCost->getDistPart(predBuf.Y(), pBuf->Y(), cu.cs->sps->bitDepths[CH_L], COMP_Y, DF_HAD);
+    uiCostBest = m_pcRdCost->getDistPart(predBuf.Y(), pBuf->Y(), cu.cs->sps->bitDepths[CH_L], COMP_Y, distFunc);
 
     // get cost with mv
     m_pcRdCost->setCostScale(0);
@@ -5591,7 +5683,7 @@ void InterSearch::xAffineMotionEstimation(CodingUnit& cu,
       xPredAffineBlk(COMP_Y, cu, refPic, acMvTemp, predBuf, false, cu.slice->clpRngs[COMP_Y], refPicList);
 
       // get error
-      Distortion uiCostTemp = m_pcRdCost->getDistPart(predBuf.Y(), pBuf->Y(), cu.cs->sps->bitDepths[CH_L], COMP_Y, DF_HAD);
+      Distortion uiCostTemp = m_pcRdCost->getDistPart(predBuf.Y(), pBuf->Y(), cu.cs->sps->bitDepths[CH_L], COMP_Y, distFunc);
       DTRACE(g_trace_ctx, D_COMMON, " (%d) uiCostTemp=%d\n", DTRACE_GET_COUNTER(g_trace_ctx, D_COMMON), uiCostTemp);
 
       // get cost with mv
@@ -5621,7 +5713,7 @@ void InterSearch::xAffineMotionEstimation(CodingUnit& cu,
     {
       xPredAffineBlk(COMP_Y, cu, refPic, ctrlPtMv, predBuf, false, cu.slice->clpRngs[COMP_Y], refPicList);
       // get error
-      Distortion costTemp = m_pcRdCost->getDistPart(predBuf.Y(), pBuf->Y(), cu.cs->sps->bitDepths[CH_L], COMP_Y, DF_HAD);
+      Distortion costTemp = m_pcRdCost->getDistPart(predBuf.Y(), pBuf->Y(), cu.cs->sps->bitDepths[CH_L], COMP_Y, distFunc);
       // get cost with mv
       m_pcRdCost->setCostScale(0);
       uint32_t bitsTemp = ruiBits;
@@ -5639,7 +5731,8 @@ void InterSearch::xAffineMotionEstimation(CodingUnit& cu,
 
   const uint32_t mvShiftTable[3] = { MV_PRECISION_INTERNAL - MV_PRECISION_QUARTER, MV_PRECISION_INTERNAL - MV_PRECISION_INTERNAL, MV_PRECISION_INTERNAL - MV_PRECISION_INT };
   const uint32_t mvShift = mvShiftTable[cu.imv];
-  if (uiCostBest <= AFFINE_ME_LIST_MVP_TH*m_hevcCost)
+  // In case GPU_ME is enabled, we will skip the refinement and simplification after Gradient-ME
+  if (!skipRefinement && uiCostBest <= AFFINE_ME_LIST_MVP_TH*m_hevcCost)
   {
     Mv mvPredTmp[3] = { acMvPred[0], acMvPred[1], acMvPred[2] };
     Mv mvME[3];
@@ -5714,7 +5807,7 @@ void InterSearch::xAffineMotionEstimation(CodingUnit& cu,
             {
               xPredAffineBlk(COMP_Y, cu, refPic, acMvTemp, predBuf, false, cu.slice->clpRngs[COMP_Y], refPicList);
 
-              Distortion costTemp = m_pcRdCost->getDistPart(predBuf.Y(), pBuf->Y(), cu.cs->sps->bitDepths[CH_L], COMP_Y, DF_HAD);
+              Distortion costTemp = m_pcRdCost->getDistPart(predBuf.Y(), pBuf->Y(), cu.cs->sps->bitDepths[CH_L], COMP_Y, distFunc);
               uint32_t bitsTemp = ruiBits;
               bitsTemp += xCalcAffineMVBits(cu, acMvTemp, acMvPred);
               costTemp = (Distortion)(floor(fWeight * (double)costTemp) + (double)m_pcRdCost->getCost(bitsTemp));
@@ -5797,6 +5890,104 @@ bool InterSearch::xEstimateAffineAMVP(CodingUnit& cu, AffineAMVPInfo& affineAMVP
 
   if( iBestIdx < 0 )
     return false;
+
+  // Setting Best MVP
+  acMvPred[0] = bestMvLT;
+  acMvPred[1] = bestMvRT;
+  acMvPred[2] = bestMvLB;
+
+  cu.mvpIdx[refPicList] = iBestIdx;
+  cu.mvpNum[refPicList] = affineAMVPInfo.numCand;
+  DTRACE(g_trace_ctx, D_COMMON, "#estAffi=%d \n", affineAMVPInfo.numCand);
+  return true;
+}
+
+bool InterSearch::xEstimateAffineAMVP_gpuBeforeME(CodingUnit& cu, AffineAMVPInfo& affineAMVPInfo, CPelUnitBuf& origBuf, RefPicList refPicList, int iRefIdx, Mv acMvPred[3], Distortion& distBiP)
+{
+   
+  Mv         bestMvLT, bestMvRT, bestMvLB;
+  int        iBestIdx = 0;
+  Distortion uiBestCost = MAX_DISTORTION;
+
+  // Fill with only zeros
+  CU::fillAffineMvpCand_onlyZero(cu, refPicList, iRefIdx, affineAMVPInfo);
+  CHECK(affineAMVPInfo.numCand == 0, "Assertion failed.");
+
+  // GPU: We always select the first candidate so there is no need to check the performance
+  // PelUnitBuf predBuf = m_tmpStorageLCU.getCompactBuf( cu );
+
+  bool stop_check = false;
+  if (affineAMVPInfo.mvCandLT[0] == affineAMVPInfo.mvCandLT[1])
+  {
+    if ((affineAMVPInfo.mvCandRT[0] == affineAMVPInfo.mvCandRT[1]) && (affineAMVPInfo.mvCandLB[0] == affineAMVPInfo.mvCandLB[1]))
+    {
+      stop_check = true;
+    }
+  }
+
+  // initialize Mvp index & Mvp
+  iBestIdx = -1;
+  // When using GPU the AMVP is filled with zeros and we only need to check one candidate
+  int numCand = 1; 
+  for (int i = 0; i < numCand; i++)
+  {
+    if (i && stop_check)
+    {
+      continue;
+    }
+    // GPU: We always select the first candidate so there is no need to check the performance
+     // Mv mv[3] = { affineAMVPInfo.mvCandLT[i], affineAMVPInfo.mvCandRT[i], affineAMVPInfo.mvCandLB[i] };
+    
+    // GPU: We always select the first candidate so there is no need to check the performance
+    // Distortion uiTmpCost = xGetAffineTemplateCost(cu, origBuf, predBuf, mv, i, AMVP_MAX_NUM_CANDS, refPicList, iRefIdx);
+    
+    // GPU: Suppose a large distortion to avoid leading to decisions, but DONT use maximum value because we add 1 to this result later
+    Distortion uiTmpCost = MAX_DISTORTION - 1000; 
+    
+    if (uiBestCost > uiTmpCost)
+    {
+      uiBestCost = uiTmpCost;
+      bestMvLT = affineAMVPInfo.mvCandLT[i];
+      bestMvRT = affineAMVPInfo.mvCandRT[i];
+      bestMvLB = affineAMVPInfo.mvCandLB[i];
+      iBestIdx = i;
+      distBiP  = uiTmpCost;
+    }
+  }
+
+  if( iBestIdx < 0 )
+    return false;
+
+  // Setting Best MVP
+  acMvPred[0] = bestMvLT;
+  acMvPred[1] = bestMvRT;
+  acMvPred[2] = bestMvLB;
+
+  cu.mvpIdx[refPicList] = iBestIdx;
+  cu.mvpNum[refPicList] = affineAMVPInfo.numCand;
+  DTRACE(g_trace_ctx, D_COMMON, "#estAffi=%d \n", affineAMVPInfo.numCand);
+  return true;
+}
+
+bool InterSearch::xEstimateAffineAMVP_afterME(CodingUnit& cu, AffineAMVPInfo& affineAMVPInfo, CPelUnitBuf& origBuf, RefPicList refPicList, int iRefIdx, Mv acMvPred[3], Distortion& distBiP)
+{
+  Mv         bestMvLT, bestMvRT, bestMvLB;
+  int        iBestIdx = 0;
+  Distortion uiBestCost = MAX_DISTORTION;
+
+  // Fill the MV Candidates
+  CU::fillAffineMvpCand(cu, refPicList, iRefIdx, affineAMVPInfo);
+  CHECK(affineAMVPInfo.numCand == 0, "Assertion failed.");
+
+  // initialize Mvp index & Mvp
+  iBestIdx = -1;
+  for (int i = 0; i < 1; i++)
+  {
+    bestMvLT = affineAMVPInfo.mvCandLT[i];
+    bestMvRT = affineAMVPInfo.mvCandRT[i];
+    bestMvLB = affineAMVPInfo.mvCandLB[i];
+    iBestIdx = i;
+  }
 
   // Setting Best MVP
   acMvPred[0] = bestMvLT;
