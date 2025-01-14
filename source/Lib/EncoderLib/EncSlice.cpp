@@ -59,6 +59,8 @@ POSSIBILITY OF SUCH DAMAGE.
 #include <math.h>
 #include "vvenc/vvencCfg.h"
 
+#include "CommonLib/storchmain.h"
+
 //! \ingroup EncoderLib
 //! \{
 
@@ -545,6 +547,37 @@ void EncSlice::compressSlice( Picture* pic )
   cs.pcv      = slice->pps->pcv;
   cs.fracBits = 0;
 
+  
+  if(storch::sEXTRACT_frame){ // In case we want to extract the frames ...
+    storch::currPoc = slice->poc;
+    CPelBuf originalFrame = slice->pic->getOrigBuf(COMP_Y);
+    int currPoc = slice->poc;
+
+    // First extract the original current frame
+    storch::exportSamplesFrame(originalFrame, currPoc, EXT_ORIGINAL);
+
+    // In case current frame is past the first, there are reconstructed frames available
+    if(pic->getPOC()>0){ 
+      int recPoc;
+
+      // Goes over all reference lists and reference pictures
+      // And try to export all of them
+      for (int rlist = REF_PIC_LIST_0; rlist < NUM_REF_PIC_LIST_01; rlist++){
+        int n = slice->numRefIdx[rlist];   // Number of frames in the list
+        for (int idx = 0; idx < n; idx++){
+          const Picture *refPic = slice->getRefPic((RefPicList)rlist, idx);
+          CPelBuf recFrame = refPic->getRecoBuf(COMP_Y);
+          recPoc = refPic->getPOC();
+
+          storch::exportSamplesFrame(recFrame, recPoc, EXT_RECONSTRUCTED);
+        }
+      }     
+    }       
+  }
+  
+  
+  
+  
   if( startCtuTsAddr == 0 )
   {
     cs.initStructData( slice->sliceQp );

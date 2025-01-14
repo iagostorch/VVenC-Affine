@@ -4682,7 +4682,14 @@ void InterSearch::xPredAffineInterSearch( CodingUnit& cu,
       else{
         foundPred = xEstimateAffineAMVP(cu, affiAMVPInfoTemp[refPicList], origBuf, refPicList, iRefIdxTemp, cMvPred[iRefList][iRefIdxTemp], biPDistTemp);
       }
-        
+             
+      if(storch::sEXTRACT_ameProgress && cu.imv==0){
+        // POC, List, RefIdx, X and Y position, width and heigth
+        storch::exportAmeProgressBlock(cu.affineType, iRefList, iRefIdxTemp, cu);
+        // AMVP
+        storch::exportAmeProgressMVs(cu.affineType, cMvPred[iRefList][iRefIdxTemp], NOT_FILLER, NOT_FINAL);
+      }
+      
       if( !foundPred )
         return;
 
@@ -4694,6 +4701,18 @@ void InterSearch::xPredAffineInterSearch( CodingUnit& cu,
       aaiMvpNum[iRefList][iRefIdxTemp] = cu.mvpNum[refPicList];;
       if (cu.affineType == AFFINEMODEL_6PARAM && refIdx4Para[iRefList] != iRefIdxTemp)
       {
+        
+        if(storch::sEXTRACT_ameProgress && cu.imv==0){
+            // Initial MV
+            storch::exportAmeProgressMVs(cu.affineType, cMvPred[iRefList][iRefIdxTemp], IS_FILLER, NOT_FINAL);
+            // isGrad + gradMV  
+            storch::exportAmeProgressFlag(cu.affineType, 0);
+            storch::exportAmeProgressMVs(cu.affineType, cMvPred[iRefList][iRefIdxTemp], IS_FILLER, NOT_FINAL);
+            // isRefinement + refinementMV
+            storch::exportAmeProgressFlag(cu.affineType, 0);
+            storch::exportAmeProgressMVs(cu.affineType, cMvPred[iRefList][iRefIdxTemp], IS_FILLER, IS_FINAL);
+        }
+        
         xCopyAffineAMVPInfo(affiAMVPInfoTemp[refPicList], aacAffineAMVPInfo[iRefList][iRefIdxTemp]);
         continue;
       }
@@ -4855,6 +4874,11 @@ void InterSearch::xPredAffineInterSearch( CodingUnit& cu,
         ::memcpy(tmp.affMVs[iRefList][iRefIdxTemp], cMvPred[iRefList][iRefIdxTemp], sizeof(Mv) * 3);
       }
 
+      // Initial MV (AMVP or derived after HEVC)
+      if(storch::sEXTRACT_ameProgress && cu.imv==0){
+        storch::exportAmeProgressMVs(cu.affineType, tmp.affMVs[iRefList][iRefIdxTemp], NOT_FILLER, NOT_FINAL)  ;
+      }
+      
       // GPB list 1, save the best MvpIdx, RefIdx and Cost
       if (slice.picHeader->mvdL1Zero && iRefList == 1 && biPDistTemp < bestBiPDist)
       {
@@ -4870,6 +4894,16 @@ void InterSearch::xPredAffineInterSearch( CodingUnit& cu,
       {
         if (slice.list1IdxToList0Idx[iRefIdxTemp] >= 0 && (cu.affineType != AFFINEMODEL_6PARAM || slice.list1IdxToList0Idx[iRefIdxTemp] == refIdx4Para[0]))
         {
+          
+          if(storch::sEXTRACT_ameProgress && cu.imv==0){
+            // Filler for gradient
+            storch::exportAmeProgressFlag(cu.affineType,0);
+            storch::exportAmeProgressMVs(cu.affineType, tmp.affMVs[iRefList][iRefIdxTemp], IS_FILLER, NOT_FINAL);
+            // Filler for simplification and refinement
+            storch::exportAmeProgressFlag(cu.affineType,0);
+            storch::exportAmeProgressMVs(cu.affineType, tmp.affMVs[iRefList][iRefIdxTemp], IS_FILLER, IS_FINAL);
+          }
+          
           // Same reference in different list. Reuse distortion, update bits
           int iList1ToList0Idx = slice.list1IdxToList0Idx[iRefIdxTemp];
           ::memcpy(tmp.affMVs[1][iRefIdxTemp], tmp.affMVs[0][iList1ToList0Idx], sizeof(Mv) * 3);
@@ -5469,6 +5503,16 @@ void InterSearch::xAffineMotionEstimation(CodingUnit& cu,
   
   if( cu.cs->sps->BCW && cu.BcwIdx != BCW_DEFAULT && !bBi && xReadBufferedAffineUniMv( cu, refPicList, iRefIdxPred, acMvPred, acMv, ruiBits, ruiCost, mvpIdx, aamvpi ) )
   {
+    
+    if(storch::sEXTRACT_ameProgress && !bBi && cu.imv==0){        
+      // Filler for gradient
+      storch::exportAmeProgressFlag(cu.affineType,0);
+      storch::exportAmeProgressMVs(cu.affineType, acMv, IS_FILLER, NOT_FINAL);
+      // Filler for refinement
+      storch::exportAmeProgressFlag(cu.affineType,0);
+      storch::exportAmeProgressMVs(cu.affineType, acMv, IS_FILLER, IS_FINAL);        
+    }
+    
     return;
   }
 
@@ -5706,6 +5750,12 @@ void InterSearch::xAffineMotionEstimation(CodingUnit& cu,
       }
     }
   }
+  
+  if(storch::sEXTRACT_ameProgress && !bBi && cu.imv==0){
+    // MV after gradient ME
+    storch::exportAmeProgressFlag(cu.affineType, 1);
+    storch::exportAmeProgressMVs(cu.affineType, acMv, NOT_FILLER, NOT_FINAL);
+  }
 
   auto checkCPMVRdCost = [&](Mv ctrlPtMv[3])
   {
@@ -5830,7 +5880,24 @@ void InterSearch::xAffineMotionEstimation(CodingUnit& cu,
         break;
       }
     }
+    
+    if(storch::sEXTRACT_ameProgress && !bBi && cu.imv==0){
+      // isRefinement = 1
+      storch::exportAmeProgressFlag(cu.affineType,1);
+    }
   }
+  else{
+    if(storch::sEXTRACT_ameProgress && !bBi && cu.imv==0){  
+      // isRefinement = 0
+      storch::exportAmeProgressFlag(cu.affineType,0);
+    }
+  }
+  
+  if(storch::sEXTRACT_ameProgress && !bBi && cu.imv==0){
+    // Final MV, after refinement and simplification
+    storch::exportAmeProgressMVs(cu.affineType, acMv, NOT_FILLER, IS_FINAL);      
+  }
+  
   acMvPred[0] = aamvpi.mvCandLT[mvpIdx];
   acMvPred[1] = aamvpi.mvCandRT[mvpIdx];
   acMvPred[2] = aamvpi.mvCandLB[mvpIdx];
