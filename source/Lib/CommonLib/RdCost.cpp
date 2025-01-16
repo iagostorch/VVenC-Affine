@@ -269,7 +269,7 @@ DistParam RdCost::setDistParam( const Pel* pOrg, const Pel* piRefY, int iOrgStri
 }
 
 Distortion RdCost::getDistPart( const CPelBuf& org, const CPelBuf& cur, int bitDepth, const ComponentID compId, DFunc eDFunc, const CPelBuf* orgLuma )
-{
+{  
   DistParam dp( org, cur, nullptr, bitDepth, 0, compId );
 # if ENABLE_MEASURE_SEARCH_SPACE
   g_searchSpaceAcc.addPrediction( dp.cur.width, dp.cur.height, toChannelType( dp.compID ) );
@@ -299,7 +299,7 @@ Distortion RdCost::getDistPart( const CPelBuf& org, const CPelBuf& cur, int bitD
       
       if(eDFunc == GPU_ME_DISTORTION){
         if( base==0 ){
-          dist = m_afpDistortFunc[base][DF_HAD4](dp);
+          dist = RdCost::xGetHADs_GPU(dp);
         }
         else{
           printf("ERROR: GPU-based Affine ME not supported for bitDepth>10\n");
@@ -313,6 +313,72 @@ Distortion RdCost::getDistPart( const CPelBuf& org, const CPelBuf& cur, int bitD
       
     }
   }
+  if (isChroma(compId))
+  {
+    return ((Distortion) (m_distortionWeight[ compId ] * dist));
+  }
+  else
+  {
+    return dist;
+  }
+}
+
+
+Distortion RdCost::getDistPart_extract( const CPelBuf& org, const CPelBuf& cur, int bitDepth, const ComponentID compId, DFunc eDFunc, const CPelBuf* orgLuma )
+{
+
+  
+  std::vector<int> partialDists;
+  
+  DistParam dp( org, cur, nullptr, bitDepth, 0, compId );
+# if ENABLE_MEASURE_SEARCH_SPACE
+  g_searchSpaceAcc.addPrediction( dp.cur.width, dp.cur.height, toChannelType( dp.compID ) );
+#endif
+  Distortion dist;
+  if( orgLuma )
+  {
+    CHECKD( eDFunc != DF_SSE_WTD, "mismatch func and parameter")
+    dp.orgLuma  = orgLuma;
+    if(eDFunc == GPU_ME_DISTORTION){
+      dist = RdCost::xGetHADs_GPU(dp, partialDists);
+    }
+    else{
+      dist = RdCost::xGetSSE_WTD( dp );
+    }
+    
+  }
+  else
+  {
+    if( ( org.width == 1 ) )
+    {
+      dist = xGetSSE( dp );
+    }
+    else
+    {
+      const int base = (bitDepth > 10) ? 1 : 0;
+      
+      if(eDFunc == GPU_ME_DISTORTION){
+        if( base==0 ){
+          dist = RdCost::xGetHADs_GPU(dp, partialDists);
+        }
+        else{
+          printf("ERROR: GPU-based Affine ME not supported for bitDepth>10\n");
+          exit(-1);
+        }
+      }
+      else{
+        dist = m_afpDistortFunc[base][eDFunc + Log2(org.width)](dp);
+      }
+      
+      
+    }
+  }
+  
+  printf("Partial distortions from SATD 4x4. Num elements -> %ld\n", partialDists.size());
+  for(int idx=0; idx<partialDists.size(); idx++){
+    printf("%d:%d\n", idx, partialDists[idx]);
+  }
+  
   if (isChroma(compId))
   {
     return ((Distortion) (m_distortionWeight[ compId ] * dist));
@@ -2009,7 +2075,45 @@ Distortion RdCost::xGetHADs_GPU( const DistParam &rcDtParam )
   return (uiSum >> DISTORTION_PRECISION_ADJUSTMENT(rcDtParam.bitDepth));
 }
 
+// Distortion function that forces the usage of multiple 4x4 HAD distortion metrics and returns the partial distortions in a vector
+Distortion RdCost::xGetHADs_GPU( const DistParam &rcDtParam, std::vector<int>& partialDist )
+{
+  if( rcDtParam.applyWeight )
+  {
+    THROW(" no support");
+  }
+  const Pel* piOrg = rcDtParam.org.buf;
+  const Pel* piCur = rcDtParam.cur.buf;
+  const int  iRows = rcDtParam.org.height;
+  const int  iCols = rcDtParam.org.width;
+  const int  iStrideCur = rcDtParam.cur.stride;
+  const int  iStrideOrg = rcDtParam.org.stride;
 
+  int  x = 0, y = 0;
+
+  Distortion uiSum = 0;
+
+  
+  if( ( iRows % 4 == 0 ) && ( iCols % 4 == 0 ) )
+  {
+    for( y = 0; y < iRows; y += 4 )
+    {
+      for( x = 0; x < iCols; x += 4 )
+      {
+        partialDist.push_back(xCalcHADs4x4( &piOrg[x], &piCur[x], iStrideOrg, iStrideCur ));
+        uiSum += xCalcHADs4x4( &piOrg[x], &piCur[x], iStrideOrg, iStrideCur );
+      }
+      piOrg += 4*iStrideOrg;
+      piCur += 4*iStrideCur;
+    }
+  }
+  else
+  {
+    THROW( "Invalid size" );
+  }
+
+  return (uiSum >> DISTORTION_PRECISION_ADJUSTMENT(rcDtParam.bitDepth));
+}
 
 void RdCost::saveUnadjustedLambda()
 {

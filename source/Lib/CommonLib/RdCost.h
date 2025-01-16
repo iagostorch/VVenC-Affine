@@ -176,6 +176,7 @@ public:
   void          setPredictor        ( const Mv& rcMv )            { m_mvPredictor = rcMv; }
   void          setCostScale        ( int iCostScale )            { m_iCostScale = iCostScale; }
   Distortion    getCost             ( uint32_t b )          const { return Distortion( m_motionLambda * b ); }
+  Distortion    getCost_extract     ( uint32_t b )          const { printf("  Lambda:%f\n", m_motionLambda); return Distortion( m_motionLambda * b ); }
   // for motion cost
   static uint32_t    xGetExpGolombNumberOfBits( int iVal )
   {
@@ -241,6 +242,7 @@ private:
   template<bool fastHad>
   static Distortion xGetHADs          ( const DistParam& pcDtParam );
   static Distortion xGetHADs_GPU      ( const DistParam& pcDtParam ); // Distortion function that forces the usage of multiple 4x4 HAD distortion metrics
+  static Distortion xGetHADs_GPU      ( const DistParam& pcDtParam, std::vector<int>& partialDist ); // Distortion function that forces the usage of multiple 4x4 HAD distortion metrics and returns the partial distortions in a vector
 
 #ifdef TARGET_SIMD_X86
   template<X86_VEXT vext>
@@ -288,6 +290,7 @@ private:
 public:
 
   Distortion   getDistPart( const CPelBuf& org, const CPelBuf& cur, int bitDepth, const ComponentID compId, DFunc eDFunc, const CPelBuf* orgLuma = NULL );
+  Distortion   getDistPart_extract( const CPelBuf& org, const CPelBuf& cur, int bitDepth, const ComponentID compId, DFunc eDFunc, const CPelBuf* orgLuma = NULL );
 
 };// END CLASS DEFINITION RdCost
 

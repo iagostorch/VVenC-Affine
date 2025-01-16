@@ -65,6 +65,16 @@ POSSIBILITY OF SUCH DAMAGE.
  //! \ingroup EncoderLib
  //! \{
 
+int targetPoc = 1;
+int targetList = 0;
+int targetRef = 0;
+int targetWidth = 128;
+int targetHeight = 128;
+int targetX = 1152;
+int targetY = 128;
+int targetParams = vvenc::AFFINEMODEL_4PARAM;
+int targetBi = 0;
+
 namespace vvenc {
 
 static const Mv s_acMvRefineH[9] =
@@ -5578,6 +5588,18 @@ void InterSearch::xAffineMotionEstimation(CodingUnit& cu,
     clipMv(acMvTemp[2], cu.lumaPos(), cu.lumaSize(), *cu.cs->pcv);
   }
 
+  
+  int target = 0;
+  target &= targetList == refPicList;
+  target &= targetRef == iRefIdxPred;
+  target &= targetWidth == cu.lwidth();
+  target &= targetHeight == cu.lheight();
+  target &= targetX == cu.lx();
+  target &= targetY == cu.ly();
+  target &= targetParams == cu.affineType;
+  
+  Distortion distortionWithoutRate;
+  
   acMvTemp[0].roundAffinePrecInternal2Amvr(cu.imv);
   acMvTemp[1].roundAffinePrecInternal2Amvr(cu.imv);
   if (cu.affineType == AFFINEMODEL_6PARAM)
@@ -5587,10 +5609,12 @@ void InterSearch::xAffineMotionEstimation(CodingUnit& cu,
   if( !m_pcEncCfg->m_ifpLines || xIsAffineMvInRangeFPP( cu, acMvTemp, m_pcEncCfg->m_ifpLines ) )
   {
     xPredAffineBlk(COMP_Y, cu, refPic, acMvTemp, predBuf, false, cu.cs->slice->clpRngs[COMP_Y], refPicList);
-
+   
     // get error
     uiCostBest = m_pcRdCost->getDistPart(predBuf.Y(), pBuf->Y(), cu.cs->sps->bitDepths[CH_L], COMP_Y, distFunc);
 
+    distortionWithoutRate = uiCostBest;
+    
     // get cost with mv
     m_pcRdCost->setCostScale(0);
     uiBitsBest = ruiBits;
@@ -5598,6 +5622,7 @@ void InterSearch::xAffineMotionEstimation(CodingUnit& cu,
     uiBitsBest += xCalcAffineMVBits(cu, acMvTemp, acMvPred);
     DTRACE(g_trace_ctx, D_COMMON, " (%d) yy uiBitsBest=%d\n", DTRACE_GET_COUNTER(g_trace_ctx, D_COMMON), uiBitsBest);
     uiCostBest = (Distortion)(floor(fWeight * (double)uiCostBest) + (double)m_pcRdCost->getCost(uiBitsBest));
+//    uiCostBest = (Distortion)(floor(fWeight * (double)uiCostBest) + (double)m_pcRdCost->getCost_extract(uiBitsBest));
 
     DTRACE(g_trace_ctx, D_COMMON, " (%d) uiBitsBest=%d, uiCostBest=%d\n", DTRACE_GET_COUNTER(g_trace_ctx, D_COMMON), uiBitsBest, uiCostBest);
 
@@ -5620,8 +5645,33 @@ void InterSearch::xAffineMotionEstimation(CodingUnit& cu,
     iIterTime = bBi ? 5 : 7;
   }
 
+  if(target)
+  {
+    printf(">> Before Gradient ME\n");
+    printf("Details for block [%dx%d]@(%dx%d)\n", cu.lwidth(), cu.lheight(), cu.lx(), cu.ly());
+    printf("%d CPs  ||  LT %dx%d  ||  RT %dx%d  ||  Lb %dx%d\n", cu.affineType?3:2, acMvTemp[0].hor, acMvTemp[0].ver, acMvTemp[1].hor, acMvTemp[1].ver, acMvTemp[2].hor, acMvTemp[2].ver );
+    printf("ruiBits %d\n", ruiBits);
+    printf("Distortion %ld\n", distortionWithoutRate);
+       
+    printf("{ BEGIN PREDICTION SIGNAL iter=-1\n");
+    for(int h=0; h<cu.lheight(); h++)
+    {
+      for(int w=0; w<cu.lwidth(); w++)
+      {
+        printf("%d,", predBuf.Y().buf[h*predBufStride+w]);
+      }
+      printf("\n");
+    }
+    printf("} END PREDICTION SIGNAL\n");
+    
+    printf("\n\n>> Inside Gradient ME\n");
+  }
+  
   for (int iter = 0; iter<iIterTime; iter++)    // iterate loop
   {
+    if(target){
+      printf("-=-= START OF ITERATION %d/%d\n", iter, iIterTime);
+    }
     memcpy(prevIterMv[iter], acMvTemp, sizeof(Mv) * 3);
     /*********************************************************************************
     *                         use gradient to update mv
@@ -5642,6 +5692,67 @@ void InterSearch::xAffineMotionEstimation(CodingUnit& cu,
     //  1  2  1
     m_VerticalSobelFilter(pPred, predBufStride, pdDerivate[1], width, width, height);
 
+    if(target)
+    {
+      printf("-=-= ITERATION %d/%d\n", iter, iIterTime);
+      printf("Details for block [%dx%d]@(%dx%d)\n", cu.lwidth(), cu.lheight(), cu.lx(), cu.ly());
+      printf("%d CPs  ||  LT %dx%d  ||  RT %dx%d  ||  Lb %dx%d\n", cu.affineType?3:2, acMvTemp[0].hor, acMvTemp[0].ver, acMvTemp[1].hor, acMvTemp[1].ver, acMvTemp[2].hor, acMvTemp[2].ver );
+      printf("ruiBits %d\n", ruiBits);
+      printf("Distortion %ld\n", distortionWithoutRate);
+
+
+      printf("{ BEGIN INITIAL PREDICTION SIGNAL iter=%d\n", iter);
+      for(int h=0; h<cu.lheight(); h++)
+      {
+        for(int w=0; w<cu.lwidth(); w++)
+        {
+          printf("%d,", predBuf.Y().buf[h*predBufStride+w]);
+        }
+        printf("\n");
+      }
+      printf("} END INITIAL PREDICTION SIGNAL\n");
+      printf("\n\n>> Inside Gradient ME\n");
+      
+      printf("{ BEGIN INITIAL ERROR SIGNAL iter=%d\n", iter);
+      for(int h=0; h<cu.lheight(); h++)
+      {
+        for(int w=0; w<cu.lwidth(); w++)
+        {
+          printf("%d,", piError[h*cu.lwidth() + w] );
+        }
+        printf("\n");
+      }
+      printf("} END INITIAL ERROR SIGNAL\n");
+      printf("\n\n>> Inside Gradient ME\n");
+
+      
+      printf("{ BEGIN INITIAL HORIZONTAL GRADIENT SIGNAL iter=%d\n", iter);
+      for(int h=0; h<cu.lheight(); h++)
+      {
+        for(int w=0; w<cu.lwidth(); w++)
+        {
+          printf("%d,", pdDerivate[0][h*cu.lwidth() + w] );
+        }
+        printf("\n");
+      }
+      printf("} END INITIAL HORIZONTAL GRADIENT SIGNAL\n");
+      printf("\n\n>> Inside Gradient ME\n");
+
+      
+      printf("{ BEGIN INITIAL VERTICAL GRADIENT SIGNAL iter=%d\n", iter);
+      for(int h=0; h<cu.lheight(); h++)
+      {
+        for(int w=0; w<cu.lwidth(); w++)
+        {
+          printf("%d,", pdDerivate[1][h*cu.lwidth() + w] );
+        }
+        printf("\n");
+      }
+      printf("} END INITIAL VERTICAL GRADIENT SIGNAL\n");
+      printf("\n\n>> Inside Gradient ME\n");      
+      
+    }
+    
     // solve delta x and y
     for (int row = 0; row < iParaNum; row++)
     {
@@ -5662,6 +5773,20 @@ void InterSearch::xAffineMotionEstimation(CodingUnit& cu,
     double dDeltaMv[6];
     Mv acDeltaMv[3];
 
+    if(target)
+    {
+      
+      printf("Building system for CU XY %dx%d     WH %dx%d  || %d CPs ||     LT %dx%d     RT %dx%d     LB %dx%d\n", cu.lx(), cu.ly(), cu.lwidth(), cu.lheight(), cu.affineType?3:2, acMvTemp[0].hor, acMvTemp[0].ver, acMvTemp[1].hor, acMvTemp[1].ver, acMvTemp[2].hor, acMvTemp[2].ver);
+      for ( int row = 0; row < iParaNum; row++ )
+      {
+        for ( int i = 0; i < iParaNum; i++ )
+        {
+          std::cout << pdEqualCoeff[row][i] << ",";
+        }
+        std::cout << std::endl;
+      }
+    }
+        
     solveEqual(pdEqualCoeff, affineParaNum, dAffinePara);
 
     // convert to delta mv
@@ -5692,6 +5817,16 @@ void InterSearch::xAffineMotionEstimation(CodingUnit& cu,
     {
       acDeltaMv[2] = Mv((int)(dDeltaMv[4] * multiShift + SIGN(dDeltaMv[4]) * 0.5) *  (1<< mvShift), (int)(dDeltaMv[5] * multiShift + SIGN(dDeltaMv[5]) * 0.5) *  (1<< mvShift));
     }
+    
+    if(target)
+    {
+      printf("Deltas %d CPs...\n", cu.affineType?3:2);
+      printf("   deltaLT: %dx%d\n", acDeltaMv[0].hor, acDeltaMv[0].ver);
+      printf("   deltaRT: %dx%d\n", acDeltaMv[1].hor, acDeltaMv[1].ver);
+      printf("   deltaLB: %dx%d\n", acDeltaMv[2].hor, acDeltaMv[2].ver);
+    }
+    
+        
     bool bAllZero = false;
     for (int i = 0; i < mvNum; i++)
     {
@@ -5727,7 +5862,16 @@ void InterSearch::xAffineMotionEstimation(CodingUnit& cu,
       xPredAffineBlk(COMP_Y, cu, refPic, acMvTemp, predBuf, false, cu.slice->clpRngs[COMP_Y], refPicList);
 
       // get error
-      Distortion uiCostTemp = m_pcRdCost->getDistPart(predBuf.Y(), pBuf->Y(), cu.cs->sps->bitDepths[CH_L], COMP_Y, distFunc);
+      Distortion uiCostTemp;
+      
+      if(target){
+        uiCostTemp = m_pcRdCost->getDistPart_extract(predBuf.Y(), pBuf->Y(), cu.cs->sps->bitDepths[CH_L], COMP_Y, distFunc);  
+      }
+      else{
+        uiCostTemp = m_pcRdCost->getDistPart(predBuf.Y(), pBuf->Y(), cu.cs->sps->bitDepths[CH_L], COMP_Y, distFunc);  
+      }
+      
+      distortionWithoutRate = uiCostTemp;
       DTRACE(g_trace_ctx, D_COMMON, " (%d) uiCostTemp=%d\n", DTRACE_GET_COUNTER(g_trace_ctx, D_COMMON), uiCostTemp);
 
       // get cost with mv
@@ -5736,6 +5880,8 @@ void InterSearch::xAffineMotionEstimation(CodingUnit& cu,
       uiBitsTemp += xCalcAffineMVBits(cu, acMvTemp, acMvPred);
       uiCostTemp = (Distortion)(floor(fWeight * (double)uiCostTemp) + (double)m_pcRdCost->getCost(uiBitsTemp));
 
+      int gpuMe = ( storch::sGPU_gpuMe2Cps && cu.affineType==AFFINEMODEL_4PARAM ) || ( storch::sGPU_gpuMe3Cps && cu.affineType==AFFINEMODEL_6PARAM );
+      
       // store best cost and mv
       if (uiCostTemp < uiCostBest)
       {
@@ -5744,11 +5890,35 @@ void InterSearch::xAffineMotionEstimation(CodingUnit& cu,
         memcpy(acMv, acMvTemp, sizeof(Mv) * 3);
         mvpIdx = bestMvpIdx;
       }
-      else if(m_pcEncCfg->m_Affine > 1)
+      // Early termination of Affine ME based on "Affine" parameter on cfg. If one iteration does not improve rd, stop Gradient ME
+      // Disable the early terminatin when GPU-based Affine ME is used
+      else if(!gpuMe && m_pcEncCfg->m_Affine > 1)
       {
         break;
-      }
+      } 
     }
+    
+    if(target){
+      printf("Details for block [%dx%d]@(%dx%d)\n", cu.lwidth(), cu.lheight(), cu.lx(), cu.ly());
+      printf("%d CPs  ||  LT %dx%d  ||  RT %dx%d  ||  Lb %dx%d\n", cu.affineType?3:2, acMvTemp[0].hor, acMvTemp[0].ver, acMvTemp[1].hor, acMvTemp[1].ver, acMvTemp[2].hor, acMvTemp[2].ver );
+      printf("ruiBits %d\n", ruiBits);
+      printf("Distortion %ld\n", distortionWithoutRate);
+      
+      
+      printf("{ PREDICTION SIGNAL AT END OF iter=%d\n", iter);
+      for(int h=0; h<cu.lheight(); h++)
+      {
+        for(int w=0; w<cu.lwidth(); w++)
+        {
+          printf("%d,", predBuf.Y().buf[h*predBufStride+w]);
+        }
+        printf("\n");
+      }
+      printf("} END PREDICTION SIGNAL AT END OF ITERARION\n");
+      
+      printf("-=-= END OF ITERATION %d/%d\n", iter, iIterTime);
+    }
+    
   }
   
   if(storch::sEXTRACT_ameProgress && !bBi && cu.imv==0){

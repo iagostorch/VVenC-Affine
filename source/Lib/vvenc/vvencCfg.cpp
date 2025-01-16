@@ -1768,14 +1768,18 @@ VVENC_DECL bool vvenc_init_config_parameter( vvenc_config *c )
   // finalize initialization 
   //
 
-
+  
   c->m_PROF &= bool(c->m_Affine);
   if (c->m_Affine > 1)
   {
-    c->m_PROF = bool(c->m_Affine);
+    // Prevents PROF from being force-enabled when using GPU-based Affine ME
+    if(storch::sGPU_gpuMe2Cps==0 && storch::sGPU_gpuMe3Cps==0)
+    {
+      c->m_PROF = bool(c->m_Affine);
+    }
     c->m_AffineType = (c->m_Affine > 1) ? true : false;
   }
-
+  
   // check char array and reset them, if they seems to be unset
   vvenc_checkCharArrayStr( c->m_traceRule, VVENC_MAX_STRING_LEN);
   vvenc_checkCharArrayStr( c->m_traceFile, VVENC_MAX_STRING_LEN);
