@@ -4585,9 +4585,15 @@ void InterSearch::xPredAffineInterSearch( CodingUnit& cu,
     printf("xPredAffineInterSearch\n");
   }
     
-  
+
   EAffineModel AFFINE_PARAMS = cu.affineType? AFFINEMODEL_6PARAM : AFFINEMODEL_4PARAM;
+  // [!] GPU xPredAffineInterSearch START
+  storch::startxPredAffineInterInterSearchUnipred_size();
+  storch::startxPredAffineInterInterSearch_size();
   
+  // [*]  START variable creation
+  storch::startNonGpuVariableCreation_size();
+
   const Slice &slice = *cu.slice;
 
   affineCost = MAX_DISTORTION;
@@ -4661,7 +4667,10 @@ void InterSearch::xPredAffineInterSearch( CodingUnit& cu,
   else{
     gpuAffineAmvp = 0;
   }
-
+  
+  // [*]  END variable creation
+  storch::finishNonGpuVariableCreation_size();
+  
   storch::startxPredAffineInterInterSearch_size( );
   storch::startxPredAffineInterInterSearchUnipred_size( );
   
@@ -4682,7 +4691,10 @@ void InterSearch::xPredAffineInterSearch( CodingUnit& cu,
           uiBitsTemp--;
         }
       }
-
+      
+      // [!] GPU non-AME USEFUL time probe START
+      storch::startNonGpuUsefulAffineME_size();
+      
       // Do Affine AMVP
       bool foundPred;
       
@@ -4692,7 +4704,10 @@ void InterSearch::xPredAffineInterSearch( CodingUnit& cu,
       else{
         foundPred = xEstimateAffineAMVP(cu, affiAMVPInfoTemp[refPicList], origBuf, refPicList, iRefIdxTemp, cMvPred[iRefList][iRefIdxTemp], biPDistTemp);
       }
-             
+      
+      // [!] GPU non-AME USEFUL time probe END
+      storch::finishNonGpuUsefulAffineME_size();  
+      
       if(storch::sEXTRACT_ameProgress && cu.imv==0){
         // POC, List, RefIdx, X and Y position, width and heigth
         storch::exportAmeProgressBlock(cu.affineType, iRefList, iRefIdxTemp, cu);
@@ -4703,6 +4718,9 @@ void InterSearch::xPredAffineInterSearch( CodingUnit& cu,
       if( !foundPred )
         return;
 
+      // [*] START OTHERS
+      storch::startNonGpuOthers_size();
+      
       if (affineAmvrEnabled)
       {
         biPDistTemp += m_pcRdCost->getCost(xCalcAffineMVBits(cu, cMvPred[iRefList][iRefIdxTemp], cMvPred[iRefList][iRefIdxTemp]));
@@ -4727,6 +4745,12 @@ void InterSearch::xPredAffineInterSearch( CodingUnit& cu,
         continue;
       }
 
+      // [*]  END OTHERS
+      storch::finishNonGpuOthers_size();
+      
+      // [!] GPU USELESS time probe START
+      storch::startNonGpuUselessAffineME_size();
+      
       // set hevc ME result as start search position when it is best than mvp
       for (int i = 0; i<3; i++)
       {
@@ -4831,6 +4855,12 @@ void InterSearch::xPredAffineInterSearch( CodingUnit& cu,
         }
       }
       
+      // [!] GPU USELESS time probe END
+      storch::finishNonGpuUselessAffineME_size();
+      
+      // [!] GPU AME time probe START
+      storch::startGpuPartAffineME_size();
+      
       // Generate a starting point for 3 CPs based on 2 CPs result
       if (      cu.affineType == AFFINEMODEL_6PARAM
           && (storch::sGPU_gpuMe3Cps==0 || (storch::sGPU_gpuMe3Cps && storch::sGPU_predict3CpsFrom2Cps ) ) ) // When GpuME for 3 CPs is enabled, the Predicted CPMVs can be forced to be zero (PREDICT_3CPs_FROM_2CPs==0) or can be generated out of the best results for 2 CPs (PREDICT_3CPs_FROM_2CPs==1)
@@ -4869,6 +4899,12 @@ void InterSearch::xPredAffineInterSearch( CodingUnit& cu,
         }
       }
 
+      // [!] GPU AME time probe END
+      storch::finishGpuPartAffineME_size();
+      
+      // [!] GPU Non-AME USELESS time probe START
+      storch::startNonGpuUselessAffineME_size();
+      
       if (uiCandCost < biPDistTemp)
       {
         ::memcpy(tmp.affMVs[iRefList][iRefIdxTemp], mvHevc, sizeof(Mv) * 3);
@@ -4884,6 +4920,9 @@ void InterSearch::xPredAffineInterSearch( CodingUnit& cu,
         ::memcpy(tmp.affMVs[iRefList][iRefIdxTemp], cMvPred[iRefList][iRefIdxTemp], sizeof(Mv) * 3);
       }
 
+      // [!] GPU USELESS time probe END
+      storch::finishNonGpuUselessAffineME_size();
+      
       // Initial MV (AMVP or derived after HEVC)
       if(storch::sEXTRACT_ameProgress && cu.imv==0){
         storch::exportAmeProgressMVs(cu.affineType, tmp.affMVs[iRefList][iRefIdxTemp], NOT_FILLER, NOT_FINAL)  ;
@@ -4914,6 +4953,9 @@ void InterSearch::xPredAffineInterSearch( CodingUnit& cu,
             storch::exportAmeProgressMVs(cu.affineType, tmp.affMVs[iRefList][iRefIdxTemp], IS_FILLER, IS_FINAL);
           }
           
+          // [!] GPU non-AME USEFUL time probe START
+          storch::startNonGpuUsefulAffineME_size();
+          
           // Same reference in different list. Reuse distortion, update bits
           int iList1ToList0Idx = slice.list1IdxToList0Idx[iRefIdxTemp];
           ::memcpy(tmp.affMVs[1][iRefIdxTemp], tmp.affMVs[0][iList1ToList0Idx], sizeof(Mv) * 3);
@@ -4929,13 +4971,26 @@ void InterSearch::xPredAffineInterSearch( CodingUnit& cu,
           /*calculate the correct cost*/
           uiCostTemp += m_pcRdCost->getCost(uiBitsTemp);
           DTRACE(g_trace_ctx, D_COMMON, " (%d) uiCostTemp=%d\n", DTRACE_GET_COUNTER(g_trace_ctx, D_COMMON), uiCostTemp);
+          
+          // [!] GPU non-AME USEFUL time probe END
+          storch::finishNonGpuUsefulAffineME_size();
         }
         else
         {
           int uiBitsTemp_preAffineME = uiBitsTemp;
           
+          // [!] GPU AME time probe START
+          storch::startGpuPartAffineME_size();
+          
           xAffineMotionEstimation(cu, origBuf, refPicList, cMvPred[iRefList][iRefIdxTemp], iRefIdxTemp, tmp.affMVs[iRefList][iRefIdxTemp], 
                                   uiBitsTemp, uiCostTemp, aaiMvpIdx[iRefList][iRefIdxTemp], affiAMVPInfoTemp[refPicList]);
+          
+          // [!] GPU AME time probe END
+          storch::finishGpuPartAffineME_size();
+          
+          // [!] GPU non-AME USEFUL time probe START
+          storch::startNonGpuUsefulAffineME_size();
+          
           if(gpuAffineAmvp){
             xEstimateAffineAMVP_afterME(cu, affiAMVPInfoTemp[refPicList], origBuf, refPicList, iRefIdxTemp, cMvPred[iRefList][iRefIdxTemp], biPDistTemp);
             // Remove bits from placeholder AMVP 0x0
@@ -4947,14 +5002,28 @@ void InterSearch::xPredAffineInterSearch( CodingUnit& cu,
             // Add updated bits to the final cost
             uiCostTemp += m_pcRdCost->getCost( uiBitsTemp );
           }
+          
+          // [!] GPU non-AME USEFUL time probe END
+          storch::finishNonGpuUsefulAffineME_size();
+          
         }
       }
       else
       {
         int uiBitsTemp_preAffineME = uiBitsTemp;
         
+        // [!] GPU AME time probe START
+        storch::startGpuPartAffineME_size();
+        
         xAffineMotionEstimation(cu, origBuf, refPicList, cMvPred[iRefList][iRefIdxTemp], iRefIdxTemp, tmp.affMVs[iRefList][iRefIdxTemp], 
                                 uiBitsTemp, uiCostTemp, aaiMvpIdx[iRefList][iRefIdxTemp], affiAMVPInfoTemp[refPicList]);
+        
+        // [!] GPU AME time probe END
+        storch::finishGpuPartAffineME_size();
+        
+        // [!] GPU non-AME USEFUL time probe START
+        storch::startNonGpuUsefulAffineME_size();
+        
         if(gpuAffineAmvp){
             xEstimateAffineAMVP_afterME(cu, affiAMVPInfoTemp[refPicList], origBuf, refPicList, iRefIdxTemp, cMvPred[iRefList][iRefIdxTemp], biPDistTemp);
             // Remove bits from placeholder AMVP 0x0
@@ -4966,9 +5035,14 @@ void InterSearch::xPredAffineInterSearch( CodingUnit& cu,
             // Add updated bits to the final cost
             uiCostTemp += m_pcRdCost->getCost( uiBitsTemp );
           }
+        
+        // [!] GPU non-AME USEFUL time probe END
+        storch::finishNonGpuUsefulAffineME_size();
+        
       }
 
-//      std::cout << "uiCostTemp after xAffineME> " << uiCostTemp << std::endl;
+      // [*] START FINALIZING
+      storch::startNonGpuFinalizing_size();
       
       if( slice.sps->BCW && cu.BcwIdx == BCW_DEFAULT && slice.isInterB() )
       {
@@ -5011,6 +5085,10 @@ void InterSearch::xPredAffineInterSearch( CodingUnit& cu,
         memcpy(mvValidList1, tmp.affMVs[iRefList][iRefIdxTemp], sizeof(Mv) * 3);
         refIdxValidList1 = iRefIdxTemp;
       }
+      
+      // [*] END FINALIZING
+      storch::finishNonGpuFinalizing_size();
+      
     } // End refIdx loop
   } // end Uni-prediction
   

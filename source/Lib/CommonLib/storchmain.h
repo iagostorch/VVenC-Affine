@@ -79,6 +79,20 @@ public:
     static void finishxPredAffineInterInterSearchUnipred_size( );
     static void startxPredAffineInterInterSearch_size( );
     static void finishxPredAffineInterInterSearch_size( );
+    static void startGpuPartAffineME_size();
+    static void finishGpuPartAffineME_size();
+    static void startNonGpuUsefulAffineME_size();
+    static void finishNonGpuUsefulAffineME_size();  
+    static void startNonGpuUselessAffineME_size();
+    static void finishNonGpuUselessAffineME_size();
+    static void startNonGpuVariableCreation_size();
+    static void finishNonGpuVariableCreation_size();
+    static void startNonGpuOthers_size();
+    static void finishNonGpuOthers_size();
+    static void startNonGpuFinalizing_size();
+    static void finishNonGpuFinalizing_size();
+    
+    static void printCustomParams();
     static void printSummary();
     static bool isAffineSize(vvenc::SizeType width, vvenc::SizeType height);
     static void exportAmeProgressFlag(int is3CPs, int flag);
@@ -100,6 +114,10 @@ private:
     
     static double xPredAffineInterSearch_time, xPredAffineInterSearchUnipred_time;
     static struct timeval xPredAffineInterSearch_tv1, xPredAffineInterSearch_tv2, xPredAffineInterSearchUnipred_tv1, xPredAffineInterSearchUnipred_tv2;
+    
+    static double gpuAme_time, gpuNonAmeUseful_time, gpuNonAmeUseless_time, gpuNonAmeVariableCreation_time, gpuNonAmeOthers_time, gpuNonAmeFinalizing_time;
+    static struct timeval gpuAme_tv1, gpuAme_tv2, gpuNonAmeUseful_tv1, gpuNonAmeUseful_tv2, gpuNonAmeUseless_tv1, gpuNonAmeUseless_tv2;
+    static struct timeval gpuNonAmeVariableCreation_tv1, gpuNonAmeVariableCreation_tv2, gpuNonAmeOthers_tv1, gpuNonAmeOthers_tv2, gpuNonAmeFinalizing_tv1, gpuNonAmeFinalizing_tv2;
             
     static std::ofstream affine_me_2cps_file, affine_me_3cps_file;
     

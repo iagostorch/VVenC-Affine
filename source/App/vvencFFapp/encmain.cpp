@@ -106,6 +106,8 @@ int main(int argc, char* argv[])
   msgApp( VVENC_INFO, "vvencFFapp [info]: started @ %s", std::ctime(&startTime2) );
   clock_t startClock = clock();
 
+  storch::printCustomParams();
+  
   // call encoding function
   int ret = pcEncApp->encode();
 
