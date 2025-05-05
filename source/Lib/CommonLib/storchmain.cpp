@@ -19,7 +19,7 @@
 // Custom encoding parameters
 int storch::sTRACE_xCompressCU, storch::sTRACE_xPredAffineInterSearch;
 int storch::sEXTRACT_ameProgress, storch::sEXTRACT_frame;
-int storch::sGPU_gpuMe2Cps, storch::sGPU_gpuMe3Cps, storch::sGPU_predict3CpsFrom2Cps;
+int storch::sGPU_gpuMe2Cps, storch::sGPU_gpuMe3Cps, storch::sGPU_predict3CpsFrom2Cps, storch::sGPU_extraGradientIterations;
 
 // Variables 
 std::ofstream storch::affine_me_2cps_file, storch::affine_me_3cps_file;
@@ -110,9 +110,10 @@ void storch::printCustomParams()
 {
   printf("\n\n");
   printf("Customized input parameters:\n");
-  printf("sGPU_gpuMe2Cps:           %d\n", storch::sGPU_gpuMe2Cps);
-  printf("sGPU_gpuMe3Cps:           %d\n", storch::sGPU_gpuMe3Cps);
-  printf("sGPU_predict3CpsFrom2Cps: %d\n", storch::sGPU_predict3CpsFrom2Cps);
+  printf("sGPU_gpuMe2Cps:               %d\n", storch::sGPU_gpuMe2Cps);
+  printf("sGPU_gpuMe3Cps:               %d\n", storch::sGPU_gpuMe3Cps);
+  printf("sGPU_predict3CpsFrom2Cps:     %d\n", storch::sGPU_predict3CpsFrom2Cps);
+  printf("sGPU_extraGradientIterations: %d\n", storch::sGPU_extraGradientIterations);
   printf("\n\n");
 }
 

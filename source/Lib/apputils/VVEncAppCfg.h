@@ -610,6 +610,7 @@ int parse( int argc, char* argv[], vvenc_config* c, std::ostream& rcOstr )
   ("sGPU_gpuMe2Cps",                                  storch::sGPU_gpuMe2Cps,                             "Disable AMVP, force predicted MV to 0x0, compute affine distortion using SATD_4x4, and skip the refinement and simplification stages afer Gradient-ME (for both lists L0 and L1)")
   ("sGPU_gpuMe3Cps",                                  storch::sGPU_gpuMe3Cps,                             "Disable AMVP, force predicted MV to 0x0, compute affine distortion using SATD_4x4, and skip the refinement and simplification stages afer Gradient-ME (for both lists L0 and L1)")
   ("sGPU_predict3CpsFrom2Cps",                        storch::sGPU_predict3CpsFrom2Cps,     "Only works with GPU_ME_3CPs. The best CPMVs of 2 CPs are used to generate a set of predicted CPMVs for 3 CPs. When disabled, the initial CPMVs for 3 CPs are forced to zero. It IS NOT the AMVP, but has the same purpose and may overwrite the AMVP results.")
+  ("sGPU_extraGradientIterations",                    storch::sGPU_extraGradientIterations,                  "Additional iterations in Gradient-based Motion Estimation.")
   
   ;
 

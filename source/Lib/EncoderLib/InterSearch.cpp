@@ -5745,6 +5745,11 @@ void InterSearch::xAffineMotionEstimation(CodingUnit& cu,
     printf("\n\n>> Inside Gradient ME\n");
   }
   
+  
+  if( !bBi )  {
+    iIterTime += storch::sGPU_extraGradientIterations;
+  }
+  
   for (int iter = 0; iter<iIterTime; iter++)    // iterate loop
   {
     if(target){

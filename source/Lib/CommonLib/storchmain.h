@@ -68,6 +68,7 @@ public:
     static int sTRACE_xCompressCU, sTRACE_xPredAffineInterSearch;
     static int sGPU_gpuMe2Cps, sGPU_gpuMe3Cps, sGPU_predict3CpsFrom2Cps;
     static int sEXTRACT_ameProgress, sEXTRACT_frame;
+    static int sGPU_extraGradientIterations; // Additional iterations in Gradient-based Motion Estimation
     
     static int currPoc;
     static int extractedFrames[EXT_NUM][500]; // Marks what frames were already extracted   
