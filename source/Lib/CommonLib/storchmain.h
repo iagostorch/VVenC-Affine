@@ -20,6 +20,10 @@
 #include "CommonLib/Unit.h"
 #include <fstream>
 
+#include <unistd.h>
+#include <sys/types.h>
+#include <unordered_map>
+
 // This typedef is used to control what type of samples are being exported from the encoder
 typedef enum
 {
@@ -117,6 +121,10 @@ private:
     static struct timeval xPredAffineInterSearch_tv1, xPredAffineInterSearch_tv2, xPredAffineInterSearchUnipred_tv1, xPredAffineInterSearchUnipred_tv2;
     
     static double gpuAme_time, gpuNonAmeUseful_time, gpuNonAmeUseless_time, gpuNonAmeVariableCreation_time, gpuNonAmeOthers_time, gpuNonAmeFinalizing_time;
+    
+    static int nThreads;
+    static std::unordered_map<__pid_t, double> gpuAme_time_multithread;
+    
     static struct timeval gpuAme_tv1, gpuAme_tv2, gpuNonAmeUseful_tv1, gpuNonAmeUseful_tv2, gpuNonAmeUseless_tv1, gpuNonAmeUseless_tv2;
     static struct timeval gpuNonAmeVariableCreation_tv1, gpuNonAmeVariableCreation_tv2, gpuNonAmeOthers_tv1, gpuNonAmeOthers_tv2, gpuNonAmeFinalizing_tv1, gpuNonAmeFinalizing_tv2;
             
