@@ -33,7 +33,8 @@ struct timeval storch::xPredAffineInterSearchUnipred_tv1, storch::xPredAffineInt
 double storch::xPredAffineInterSearchUnipred_time, storch::xPredAffineInterSearch_time;
 
 double storch::gpuAme_time, storch::gpuNonAmeUseful_time, storch::gpuNonAmeUseless_time, storch::gpuNonAmeVariableCreation_time, storch::gpuNonAmeOthers_time, storch::gpuNonAmeFinalizing_time;
-int storch::nThreads;
+
+std::unordered_map<__pid_t, struct timeval> storch::hashmap_tv_affineMe;
 std::unordered_map<__pid_t, double> storch::gpuAme_time_multithread;
 struct timeval storch::gpuAme_tv1, storch::gpuAme_tv2, storch::gpuNonAmeUseful_tv1, storch::gpuNonAmeUseful_tv2, storch::gpuNonAmeUseless_tv1, storch::gpuNonAmeUseless_tv2;
 struct timeval storch::gpuNonAmeVariableCreation_tv1, storch::gpuNonAmeVariableCreation_tv2, storch::gpuNonAmeOthers_tv1, storch::gpuNonAmeOthers_tv2, storch::gpuNonAmeFinalizing_tv1, storch::gpuNonAmeFinalizing_tv2;
@@ -83,9 +84,6 @@ storch::storch(){
   gpuNonAmeVariableCreation_time = 0.0;
   gpuNonAmeOthers_time = 0.0;
   gpuNonAmeFinalizing_time = 0.0;
-  
-  nThreads = 0;
-
 }
 
 // Allows an easier handling of block sizes with meaninful names and less conditionals
@@ -132,7 +130,7 @@ void storch::printCustomParams()
 }
 
 void storch::printSummary(){
-  printf("Custom statistics:\n\n");
+  printf("Custom statistics:\n\n");  
   printf("xPredAffineInterSearch:         %f\n", xPredAffineInterSearch_time);
   printf("xPredAffineInterSearch_unipred: %f\n", xPredAffineInterSearchUnipred_time);
   printf("Non-AME Useless time:           %f\n", gpuNonAmeUseless_time);
@@ -141,13 +139,13 @@ void storch::printSummary(){
   printf("Others time:                    %f\n", gpuNonAmeOthers_time);
   printf("Finalizing time:                %f\n", gpuNonAmeFinalizing_time);
   printf("AME time:                       %f\n", gpuAme_time);
-  printf("Individual time for %d threads\n", nThreads);
+  printf("Individual time for %ld threads\n", gpuAme_time_multithread.size());
   double acc = 0.0;
   for(auto& it : gpuAme_time_multithread){
-    printf("    %d: %f\n", it.first, it.second);
+    printf("    AME Thread %d: %f\n", it.first, it.second);
     acc += it.second;
   }
-  printf("    Acc: %f\n", acc);
+  printf("    AME Acc: %f\n", acc);
   
 }
 
@@ -172,7 +170,22 @@ void storch::finishxPredAffineInterInterSearch_size( ){
 // Computation that is performed by the GPU. We must substitute this measure by the GPU running time
 void storch::startGpuPartAffineME_size(){
   gettimeofday(&gpuAme_tv1, NULL);
+  
+  auto tid = gettid();
+  if(storch::hashmap_tv_affineMe.find(tid) == storch::hashmap_tv_affineMe.end()){ // First time. Create tv object
+    struct timeval first_tv;
+    gettimeofday(&first_tv, NULL);
+    double dummy; // Used to initialize the time counter
+    storch::hashmap_tv_affineMe.insert({tid, first_tv});
+    
+  }
+  else{ // Only update tv
+    struct timeval first_tv; 
+    gettimeofday(&first_tv, NULL);
+    storch::hashmap_tv_affineMe.at(tid) = first_tv;
+  }
 }
+
 void storch::finishGpuPartAffineME_size(){
   gettimeofday(&gpuAme_tv2, NULL);
   double deltaT = (double) (storch::gpuAme_tv2.tv_usec - storch::gpuAme_tv1.tv_usec)/1000000 + (double) (storch::gpuAme_tv2.tv_sec - storch::gpuAme_tv1.tv_sec);
@@ -183,13 +196,20 @@ void storch::finishGpuPartAffineME_size(){
   
   auto tid = gettid();
   
-  if(storch::gpuAme_time_multithread.find(tid) == storch::gpuAme_time_multithread.end()){ // First time this thread executes. Create a new entry ...
+  struct timeval second_tv;
+  gettimeofday(&second_tv, NULL);
+  struct timeval first_tv = storch::hashmap_tv_affineMe.at(tid);
+
+  deltaT = (double) (second_tv.tv_usec - first_tv.tv_usec)/1000000 + (double) (second_tv.tv_sec - first_tv.tv_sec);
+
+  if(storch::gpuAme_time_multithread.find(tid) == storch::gpuAme_time_multithread.end()){ // First time. Create time object
     storch::gpuAme_time_multithread.insert({tid, deltaT});
-    storch::nThreads++;    
   }
-  else{ // Update the running time
-    storch::gpuAme_time_multithread.at(tid) += deltaT;    
-  }  
+  else{
+    storch::gpuAme_time_multithread.at(tid) += deltaT;
+  }
+
+  
 }
 // Computation performed by the CPU (inside xPredAffineInterInterSearch) that MUST be done even with GPU acceleration
 void storch::startNonGpuUsefulAffineME_size(){

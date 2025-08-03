@@ -79,7 +79,6 @@ public:
     
     static CuSize getSizeEnum(vvenc::CodingUnit cu);
     
-    
     static void startxPredAffineInterInterSearchUnipred_size( );
     static void finishxPredAffineInterInterSearchUnipred_size( );
     static void startxPredAffineInterInterSearch_size( );
@@ -122,7 +121,9 @@ private:
     
     static double gpuAme_time, gpuNonAmeUseful_time, gpuNonAmeUseless_time, gpuNonAmeVariableCreation_time, gpuNonAmeOthers_time, gpuNonAmeFinalizing_time;
     
-    static int nThreads;
+    static std::unordered_map<__pid_t, struct timeval> hashmap_tv_affineMe;
+    
+    static int nThreads_affineMe;
     static std::unordered_map<__pid_t, double> gpuAme_time_multithread;
     
     static struct timeval gpuAme_tv1, gpuAme_tv2, gpuNonAmeUseful_tv1, gpuNonAmeUseful_tv2, gpuNonAmeUseless_tv1, gpuNonAmeUseless_tv2;
